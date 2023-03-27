@@ -1,10 +1,33 @@
-var router = require("express").Router();
-var mongoose = require("mongoose");
-var Item = mongoose.model("Item");
-var Comment = mongoose.model("Comment");
-var User = mongoose.model("User");
-var auth = require("../auth");
+const router = require("express").Router();
+const mongoose = require("mongoose");
+const { Configuration, OpenAIApi } = require("openapi");
+
+const auth = require("../auth");
+
+const Item = mongoose.model("Item");
+const Comment = mongoose.model("Comment");
+const User = mongoose.model("User");
+
 const { sendEvent } = require("../../lib/event");
+
+const configuration = new Configuration({
+  //apiKey: process.env.OPENAI_API_KEY,
+  apiKey: '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',
+});
+const openai = new OpenAIApi(configuration);
+
+function generateOpenAiImage(item) {
+  let imagePromise = Promise.resolve();
+  if (!item.image) {
+    imagePromise = openai.createImage({
+      prompt: item.title,
+      n: 1,
+      size: "256x256",
+    }).then(response => (item.image = response.data.data[0].url))
+  }
+
+  return imagePromise.then(() => item);
+}
 
 // Preload item objects on routes with ':item'
 router.param("item", function(req, res, next, slug) {
@@ -148,10 +171,21 @@ router.post("/", auth.required, function(req, res, next) {
 
       item.seller = user;
 
-      return item.save().then(function() {
-        sendEvent('item_created', { item: req.body.item })
-        return res.json({ item: item.toJSONFor(user) });
-      });
+      /*let imagePromise = Promise.resolve();
+      if (!item.image) {
+        imagePromise = openai.createImage({
+          prompt: item.title,
+          n: 1,
+          size: "256x256",
+        }).then(response => (item.image = response.data.data[0].url))
+      }*/
+
+      return generateOpenAiImage(item)
+        .then((i) => i.save())
+        .then(function() {
+          sendEvent('item_created', { item: req.body.item })
+          return res.json({ item: item.toJSONFor(user) });
+        });
     })
     .catch(next);
 });
